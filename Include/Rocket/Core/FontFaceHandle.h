@@ -29,7 +29,7 @@
 #define ROCKETCOREFONTFACEHANDLE_H
 
 #include <Rocket/Core/ReferenceCountable.h>
-#include "UnicodeRange.h"
+#include <Rocket/Core/UnicodeRange.h>
 #include <Rocket/Core/Font.h>
 #include <Rocket/Core/FontEffect.h>
 #include <Rocket/Core/FontGlyph.h>
@@ -129,7 +129,7 @@ protected:
 private:
 	void GenerateMetrics(void);
 
-	bool BuildGlyphMap(const UnicodeRange& unicode_range);
+	bool BuildGlyphMap( const Rocket::Core::UnicodeRange &unicode_range );
 	void BuildGlyph(FontGlyph& glyph, FT_GlyphSlot ft_glyph);
 
 	int GetKerning(word lhs, word rhs) const;
@@ -142,7 +142,6 @@ private:
 
 	FT_Face ft_face;
 	uint8_t fonts_generated[ 0xFFFF / 256 / 8 ];
-
 
 	FontGlyphMap glyphs;
 
