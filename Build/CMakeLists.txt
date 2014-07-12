@@ -16,9 +16,10 @@ project(libRocket C CXX)
 include(GNUInstallDirs)
 
 set(LIBROCKET_VERSION_MAJOR 1)
-set(LIBROCKET_VERSION_MINOR 2)
-set(LIBROCKET_VERSION_PATCH 1)
-set(PROJECT_VERSION ${LIBROCKET_VERSION_MAJOR}.${LIBROCKET_VERSION_MINOR}.${LIBROCKET_VERSION_PATCH})
+set(LIBROCKET_VERSION_MINOR 3)
+set(LIBROCKET_VERSION_PATCH 0)
+set(LIBROCKET_VERSION_TWEAK 0)
+set(PROJECT_VERSION ${LIBROCKET_VERSION_MAJOR}.${LIBROCKET_VERSION_MINOR}.${LIBROCKET_VERSION_PATCH}.${LIBROCKET_VERSION_TWEAK})
 
 # Search in the 'cmake' directory for additional CMake modules.
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
@@ -78,8 +79,8 @@ mark_as_advanced(FREETYPE_INCLUDE_DIRS FREETYPE_LIBRARY FREETYPE_LINK_DIRECTORIE
 
 # Boost and Python
 if(BUILD_PYTHON_BINDINGS)
-    find_package(PythonInterp REQUIRED)
-    find_package(PythonLibs REQUIRED)
+    find_package(PythonInterp 2 REQUIRED)
+    find_package(PythonLibs 2 REQUIRED)
     execute_process(
         COMMAND ${PYTHON_EXECUTABLE} -c "from distutils import sysconfig; print(sysconfig.get_python_lib(1,0,prefix=''))"
         OUTPUT_VARIABLE PYTHON_INSTDIR
