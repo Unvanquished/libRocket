@@ -2,6 +2,12 @@
 # Build script for libRocket =======
 #===================================
 
+if(APPLE)
+	if(IOS_PLATFORM)
+		set(CMAKE_TOOLCHAIN_FILE cmake/Platform/iOS.cmake)
+	endif(IOS_PLATFORM)
+endif(APPLE)
+
 # We use the new OSX_ARCHITECTURES property
 # and GNUInstallDirs module
 cmake_minimum_required(VERSION 2.8.5)
@@ -34,6 +40,22 @@ include(TestForANSIForScope)
 include(TestForANSIStreamHeaders)
 include(TestForSTDNamespace)
 
+#===================================
+# Provide hints as to where depends=
+# might be found                   =
+#===================================
+
+if(NOT DEFINED ENV{FREETYPE_DIR})
+	set(ENV{FREETYPE_DIR} "${PROJECT_SOURCE_DIR}/../Dependencies")
+endif()
+
+if(NOT DEFINED ENV{Boost_DIR})
+	set(ENV{Boost_DIR} "${PROJECT_SOURCE_DIR}/../Dependencies")
+endif()
+
+if(NOT DEFINED ENV{LUA_DIR})
+	set(ENV{LUA_DIR} "${PROJECT_SOURCE_DIR}/../Dependencies")
+endif()
 
 #===================================
 # Build options ====================
@@ -45,9 +67,30 @@ if(NOT CMAKE_BUILD_TYPE)
         FORCE)
 endif()
 
-option(BUILD_SHARED_LIBS "Build shared libraries" ON)
+if(NOT IOS)
+	option(BUILD_SHARED_LIBS "Build shared libraries" ON)
+endif(NOT IOS)
+
 option(BUILD_PYTHON_BINDINGS "Build python bindings" OFF)
+option(BUILD_LUA_BINDINGS "Build Lua bindings" OFF)
 option(BUILD_SAMPLES "Build samples" OFF)
+if(WIN32)
+	option(SKIP_DIRECTX_SAMPLES "Skip build of all DirectX related samples.  Only applies if BUILD_SAMPLES is ON" OFF)
+	option(SKIP_DIRECTX9_SAMPLE "Skip build of DirectX 9 related sample.  Only applies if BUILD_SAMPLES is ON and SKIP_DIRECTX_SAMPLES is OFF" OFF)
+	option(SKIP_DIRECTX10_SAMPLE "Skip build of DirectX 10 related sample.  Only applies if BUILD_SAMPLES is ON and SKIP_DIRECTX_SAMPLES is OFF" OFF)
+endif()
+
+if(IOS)
+	if(BUILD_SHARED_LIBS)
+		message(FATAL_ERROR "BUILD_SHARED_LIBS must be OFF for iOS builds.  iOS does not support shared libraries.")
+	endif(BUILD_SHARED_LIBS)
+endif(IOS)
+
+if(IOS)
+	if(BUILD_SHARED_LIBS)
+		message(FATAL_ERROR "BUILD_SHARED_LIBS must be OFF for iOS builds.  iOS does not support shared libraries.")
+	endif(BUILD_SHARED_LIBS)
+endif(IOS)
 
 if(NOT BUILD_SHARED_LIBS)
     add_definitions(-DSTATIC_LIB)
@@ -100,6 +143,15 @@ if(BUILD_PYTHON_BINDINGS)
 
 endif()
 
+#Lua
+if(BUILD_LUA_BINDINGS)
+    find_package(Lua)
+    if(LUA_FOUND)
+        include_directories(${LUA_INCLUDE_DIR})
+        list(APPEND LUA_BINDINGS_LINK_LIBS ${LUA_LIBRARIES})
+    endif()
+endif()
+
 
 #===================================
 # Setup paths ======================
@@ -126,6 +178,7 @@ foreach(library ${LIBRARIES})
     add_library(${NAME} ${${library}_SRC_FILES}
                         ${${library}_HDR_FILES}
                         ${${library}_PUB_HDR_FILES}
+                        ${MASTER_${library}_PUB_HDR_FILES}
     )
 
     set_target_properties(${NAME} PROPERTIES
@@ -134,10 +187,12 @@ foreach(library ${LIBRARIES})
     )
     
     if(APPLE)
-    	set_target_properties(${NAME} PROPERTIES
-    					OSX_ARCHITECTURES "i386;x86_64;"
-    	)
-    endif()
+	if(NOT IOS)
+    		set_target_properties(${NAME} PROPERTIES
+    						OSX_ARCHITECTURES "i386;x86_64;"
+    		)
+	endif(NOT IOS)
+    endif(APPLE)
 
     install(TARGETS ${NAME}
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -153,7 +208,7 @@ if(BUILD_PYTHON_BINDINGS)
     foreach(library ${LIBRARIES})
         set(NAME _rocket${library})
 
-        add_library(${NAME} ${Py${library}_SRC_FILES}
+        add_library(${NAME} MODULE ${Py${library}_SRC_FILES}
                             ${Py${library}_HDR_FILES}
                             ${Py${library}_PUB_HDR_FILES}
         )
@@ -162,6 +217,39 @@ if(BUILD_PYTHON_BINDINGS)
 
         install(TARGETS ${NAME}
                 LIBRARY DESTINATION ${PYTHON_INSTDIR}
+        )
+    endforeach(library)
+endif()
+
+# Build Lua bindings
+if(BUILD_LUA_BINDINGS)
+    set(LIBRARIES Core Controls)
+
+    foreach(library ${LIBRARIES})
+        set(NAME Rocket${library}Lua)
+
+        add_library(${NAME} ${Lua${library}_SRC_FILES}
+                            ${Lua${library}_HDR_FILES}
+                            ${Lua${library}_PUB_HDR_FILES}
+        )
+
+        set_target_properties(${NAME} PROPERTIES
+                           VERSION ${PROJECT_VERSION}
+                           SOVERSION ${LIBROCKET_VERSION_MAJOR}
+        )
+        
+    if(APPLE)
+	if(NOT IOS)
+    		set_target_properties(${NAME} PROPERTIES
+    						OSX_ARCHITECTURES "$(ARCHS_STANDARD_32_64_BIT)"
+    		)
+	endif(NOT IOS)
+    endif(APPLE)
+
+        install(TARGETS ${NAME}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         )
     endforeach(library)
 endif()
@@ -178,6 +266,11 @@ target_link_libraries(RocketDebugger RocketCore)
 if(BUILD_PYTHON_BINDINGS)
     target_link_libraries(_rocketcore RocketCore ${PY_BINDINGS_LINK_LIBS})
     target_link_libraries(_rocketcontrols RocketControls ${PY_BINDINGS_LINK_LIBS})
+endif()
+
+if(BUILD_LUA_BINDINGS)
+    target_link_libraries(RocketCoreLua RocketCore ${LUA_BINDINGS_LINK_LIBS})
+    target_link_libraries(RocketControlsLua RocketControls RocketCoreLua ${LUA_BINDINGS_LINK_LIBS})
 endif()
 
 
@@ -226,8 +319,64 @@ if(BUILD_SAMPLES)
     
     # Set up required system libraries
     if(WIN32)
-		list(APPEND samples directx)
-    	list(APPEND sample_LIBRARIES d3d9 d3dx9)
+		if(SKIP_DIRECTX_SAMPLES)
+			message("-- Skipping all DirectX samples")
+		else()
+			message("-- Determing if DirectX samples can be built")
+			include(FindDirectX)
+			find_package(DirectX)
+			if(DirectX_FOUND)
+				set(DIRECTX_SAMPLE_LIST)
+				set(DIRECTX_SKIPPED_SAMPLE_LIST)
+
+				# We should be able to build DirectX 9 sample
+				message("-- Determing if DirectX samples can be built - Yes")
+
+				if(SKIP_DIRECTX9_SAMPLE)
+					message("-- Skipping build of DirectX 9 sample: User disabled")
+					list(APPEND DIRECTX_SKIPPED_SAMPLE_LIST "DirectX9 ")
+				else()
+					if(DirectX_LIBRARY)
+						if(DirectX_D3DX9_LIBRARY)
+							list(APPEND DIRECTX_SAMPLE_LIST "DirectX9 ")
+						else()
+							set(SKIP_DIRECTX9_SAMPLE ON)
+							message("-- Skipping build of DirectX 9 sample: DirectX_D3DX9_LIBRARY not found")
+							list(APPEND DIRECTX_SKIPPED_SAMPLE_LIST "DirectX9 ")
+						endif()
+					else()
+						set(SKIP_DIRECTX9_SAMPLE ON)
+						message("-- Skipping build of DirectX 9 sample: DirectX_LIBRARY not found")
+						list(APPEND DIRECTX_SKIPPED_SAMPLE_LIST "DirectX9 ")
+					endif()
+				endif()
+
+				if(SKIP_DIRECTX10_SAMPLE)
+					message("-- Skipping build of DirectX 10 sample: User disabled")
+					list(APPEND DIRECTX_SKIPPED_SAMPLE_LIST "DirectX10 ")
+				else()
+					if(DirectX_D3D10_FOUND)
+						list(APPEND DIRECTX_SAMPLE_LIST "DirectX10 ")
+					else()
+						set(SKIP_DIRECTX10_SAMPLE ON)
+						message("-- Skipping build of DirectX 10 sample: Missing DirectX_D3D10_INCLUDE_DIR, DirectX_D3D10_LIBRARY or DirectX_D3DX10_LIBRARY")
+						list(APPEND DIRECTX_SKIPPED_SAMPLE_LIST "DirectX10 ")
+					endif()
+				endif()
+
+
+				if(DIRECTX_SAMPLE_LIST)
+					message("-- Enabled DirectX samples: " ${DIRECTX_SAMPLE_LIST})
+				endif()
+				if(DIRECTX_SKIPPED_SAMPLE_LIST)
+					message("-- Disabled DirectX samples: " ${DIRECTX_SKIPPED_SAMPLE_LIST})
+				endif()
+			else()
+				message("-- Determing if DirectX samples can be built - No")
+				set(SKIP_DIRECTX_SAMPLES ON)
+				set(SKIP_DIRECTX9_SAMPLE ON)
+			endif()
+		endif()
     elseif(APPLE)
 		include(FindCarbon)
     	find_package(Carbon REQUIRED)
@@ -240,6 +389,12 @@ if(BUILD_SAMPLES)
     	find_package(X11 REQUIRED)
         if (X11_FOUND)
         	list(APPEND sample_LIBRARIES ${X11_LIBRARIES})
+		# shell/src/x11/InputX11.cpp:InitialiseX11Keymap uses Xkb if
+		# possible instead of XGetKeyboardMapping for performance
+		if(X11_Xkb_FOUND)
+			FIND_PACKAGE_MESSAGE(X11 "Found X11 KBlib: ${X11_X11_LIB}" "[${X11_X11_LIB}][${X11_XkbINCLUDE_DIR}]")
+			add_definitions(-DHAS_X11XKBLIB)
+		endif()
         endif()
     endif()
    
@@ -255,11 +410,6 @@ if(BUILD_SAMPLES)
     	set_target_properties(shell PROPERTIES OSX_ARCHITECTURES "i386;")
     endif()
 
-    install(TARGETS shell
-            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    )
-
     # Build and install the basic samples
     foreach(sample ${samples})
         bl_sample(${sample} ${sample_LIBRARIES})
@@ -270,6 +420,32 @@ if(BUILD_SAMPLES)
         	RUNTIME DESTINATION ${SAMPLES_DIR}/${sample}
         	BUNDLE DESTINATION ${SAMPLES_DIR})
     endforeach()
+
+	if(WIN32)
+		if(NOT SKIP_DIRECTX9_SAMPLE)
+			include_directories(${DirectX_INCLUDE_DIR})
+
+			bl_sample(directx ${sample_LIBRARIES}  ${DirectX_LIBRARY} ${DirectX_D3DX9_LIBRARY})
+
+			# The samples always set this as their current working directory
+			install(DIRECTORY DESTINATION ${SAMPLES_DIR}/basic/directx)
+			install(TARGETS directx 
+				RUNTIME DESTINATION ${SAMPLES_DIR}/directx
+				BUNDLE DESTINATION ${SAMPLES_DIR})
+		endif()
+
+		if(NOT SKIP_DIRECTX10_SAMPLE)
+			include_directories(${DirectX_INCLUDE_DIR} ${DirectX_D3D10_INCLUDE_DIRS})
+
+			bl_sample(directx10 ${sample_LIBRARIES}  ${DirectX_D3D10_LIBRARIES})
+
+			# The samples always set this as their current working directory
+			install(DIRECTORY DESTINATION ${SAMPLES_DIR}/basic/directx10)
+			install(TARGETS directx10 
+				RUNTIME DESTINATION ${SAMPLES_DIR}/directx10
+				BUNDLE DESTINATION ${SAMPLES_DIR})
+		endif()
+	endif()
 
     # Build and install the tutorials
     foreach(tutorial ${tutorials})
@@ -288,6 +464,23 @@ if(BUILD_SAMPLES)
     install(TARGETS invaders 
     	RUNTIME DESTINATION ${SAMPLES_DIR}/invaders
     	BUNDLE DESTINATION ${SAMPLES_DIR})
+
+	if(BUILD_PYTHON_BINDINGS)
+	    # Build and install pyinvaders sample
+	    bl_sample(pyinvaders ${sample_LIBRARIES} ${PYTHON_LIBRARIES} ${PY_BINDINGS_LINK_LIBS})
+	    install(DIRECTORY DESTINATION ${SAMPLES_DIR}/pyinvaders)
+	    install(TARGETS pyinvaders
+	    	RUNTIME DESTINATION ${SAMPLES_DIR}/pyinvaders
+	    	BUNDLE DESTINATION ${SAMPLES_DIR})
+	endif()
+    
+    if(BUILD_LUA_BINDINGS)
+        bl_sample(luainvaders RocketCoreLua RocketControlsLua ${sample_LIBRARIES} ${LUA_BINDINGS_LINK_LIBS})
+        install(DIRECTORY DESTINATION ${SAMPLES_DIR}/luainvaders)
+        install(TARGETS luainvaders 
+        	RUNTIME DESTINATION ${SAMPLES_DIR}/luainvaders
+        	BUNDLE DESTINATION ${SAMPLES_DIR})
+    endif()
 endif()
 
 
@@ -295,21 +488,44 @@ endif()
 # Installation =====================
 #===================================
 
-if(BUILD_PYTHON_BINDINGS)
-    install(FILES ${PROJECT_SOURCE_DIR}/bin/rocket.py
-            DESTINATION ${PYTHON_INSTDIR}
-    )
+if(BUILD_LUA_BINDINGS AND BUILD_PYTHON_BINDINGS)
     install(DIRECTORY ${PROJECT_SOURCE_DIR}/Include/Rocket
             DESTINATION include
     )
 else()
-    install(DIRECTORY ${PROJECT_SOURCE_DIR}/Include/Rocket
-            DESTINATION include
-            PATTERN "Python" EXCLUDE
-    )
+	if(NOT BUILD_LUA_BINDINGS AND NOT BUILD_PYTHON_BINDINGS)
+	    install(DIRECTORY ${PROJECT_SOURCE_DIR}/Include/Rocket
+	            DESTINATION include
+	            PATTERN "Python" EXCLUDE
+	            PATTERN "Lua" EXCLUDE
+	    )
+	else()
+		if(BUILD_PYTHON_BINDINGS)
+			install(FILES ${PROJECT_SOURCE_DIR}/bin/rocket.py
+				DESTINATION ${PYTHON_INSTDIR}
+			)
+			install(DIRECTORY ${PROJECT_SOURCE_DIR}/Include/Rocket
+				DESTINATION include
+				PATTERN "Lua" EXCLUDE
+			)
+		else()
+			if(BUILD_LUA_BINDINGS)
+				install(DIRECTORY ${PROJECT_SOURCE_DIR}/Include/Rocket
+					DESTINATION include
+					PATTERN "Python" EXCLUDE
+				)
+			else()
+				message(FATAL_ERROR "ASSERT: Unexpected option combination, this is a logical impossibility.")
+			endif()
+		endif()
+	endif()
 endif()
 
 if(BUILD_SAMPLES)
+    install(DIRECTORY ${PROJECT_SOURCE_DIR}/Samples/assets
+            DESTINATION ${SAMPLES_DIR}
+    )
+
     install(DIRECTORY ${PROJECT_SOURCE_DIR}/Samples/tutorial/template/data
             DESTINATION ${SAMPLES_DIR}/tutorial/template
     )
@@ -331,7 +547,19 @@ if(BUILD_SAMPLES)
     install(DIRECTORY ${PROJECT_SOURCE_DIR}/Samples/invaders/data
             DESTINATION ${SAMPLES_DIR}/invaders
     )
-    install(DIRECTORY ${PROJECT_SOURCE_DIR}/Samples/assets
-            DESTINATION ${SAMPLES_DIR}
-    )
+
+    if(BUILD_PYTHON_BINDINGS)
+        install(DIRECTORY ${PROJECT_SOURCE_DIR}/Samples/pyinvaders/data
+                DESTINATION ${SAMPLES_DIR}/pyinvaders
+        )
+    endif()
+
+    if(BUILD_LUA_BINDINGS)
+        install(DIRECTORY ${PROJECT_SOURCE_DIR}/Samples/luainvaders/data 
+                DESTINATION ${SAMPLES_DIR}/luainvaders
+        )
+        install(DIRECTORY ${PROJECT_SOURCE_DIR}/Samples/luainvaders/lua 
+                DESTINATION ${SAMPLES_DIR}/luainvaders
+        )
+    endif()
 endif()
