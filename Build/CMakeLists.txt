@@ -3,9 +3,30 @@
 #===================================
 
 if(APPLE)
+	# This has to be before most other options so CMake properly handles the
+	# compiler variables, it MUST bebefore the project() definition
 	if(IOS_PLATFORM)
 		set(CMAKE_TOOLCHAIN_FILE cmake/Platform/iOS.cmake)
 	endif(IOS_PLATFORM)
+
+	option(BUILD_UNIVERSAL_BINARIES "Build universal binaries for all architectures supported" ON)
+	if (NOT CMAKE_OSX_ARCHITECTURES AND BUILD_UNIVERSAL_BINARIES)
+		if(IOS)
+			# set the architecture for iOS
+			if (${IOS_PLATFORM} STREQUAL "OS")
+				set (IOS_ARCH armv6 armv7 armv7s arm64)
+				set (CMAKE_OSX_ARCHITECTURES ${IOS_ARCH} CACHE string  "Build architecture for iOS")
+			else (${IOS_PLATFORM} STREQUAL "OS")
+				set (IOS_ARCH i386 x86_64)
+				set (CMAKE_OSX_ARCHITECTURES ${IOS_ARCH} CACHE string  "Build architecture for iOS Simulator")
+			endif (${IOS_PLATFORM} STREQUAL "OS")
+
+		else(IOS)
+			# set the architectures for OS X
+			set (OSXI_ARCH i386 x86_64)
+			set (CMAKE_OSX_ARCHITECTURES ${OSXI_ARCH} CACHE string  "Build architecture for OS X universal binaries")
+		endif(IOS)
+	endif (NOT CMAKE_OSX_ARCHITECTURES AND BUILD_UNIVERSAL_BINARIES)
 endif(APPLE)
 
 # We use the new OSX_ARCHITECTURES property
@@ -15,6 +36,18 @@ cmake_minimum_required(VERSION 2.8.5)
 if(COMMAND cmake_policy)
   cmake_policy(SET CMP0015 NEW)
 endif(COMMAND cmake_policy)
+
+# Enable the use of MACOSX_RPATH by default for CMake v3.0+; this effectively
+# allows plug 'n' play functionality, so to speak -- the resulting shared
+# library files can simply be copied over into the end-user's application
+# bundle or framework bundle. No mucking around with install_name_tool.
+#
+# 	See also:
+# cmake --help-policy cmp0042
+# http://www.kitware.com/blog/home/post/510
+if(POLICY CMP0042)
+  cmake_policy(SET CMP0042 NEW)
+endif(POLICY CMP0042)
 
 project(libRocket C CXX)
 
@@ -30,7 +63,11 @@ set(PROJECT_VERSION ${LIBROCKET_VERSION_MAJOR}.${LIBROCKET_VERSION_MINOR}.${LIBR
 # Search in the 'cmake' directory for additional CMake modules.
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
-set(CMAKE_DEBUG_POSTFIX  "_d")
+# Old versions of CMake need some updated Modules, but we don't want
+# to override newer versions of CMake which have working versions
+if(CMAKE_MAJOR_VERSION LESS 3)
+	list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/v2fixes)
+endif()
 
 #===================================
 # Environment tests ================
@@ -57,6 +94,29 @@ if(NOT DEFINED ENV{LUA_DIR})
 	set(ENV{LUA_DIR} "${PROJECT_SOURCE_DIR}/../Dependencies")
 endif()
 
+if(NOT DEFINED ENV{SDLDIR})
+	set(ENV{SDLDIR} "${PROJECT_SOURCE_DIR}/../Dependencies")
+endif()
+
+if(NOT DEFINED ENV{SDLIMAGEDIR})
+	set(ENV{SDLIMAGEDIR} "${PROJECT_SOURCE_DIR}/../Dependencies")
+endif()
+
+if(NOT DEFINED ENV{SFML_ROOT})
+	set(ENV{SFML_ROOT} "${PROJECT_SOURCE_DIR}/../Dependencies")
+endif()
+
+#===================================
+# Plaform specific global hacks ====
+#===================================
+
+if(APPLE)
+	# Disables naked builtins from AssertMacros.h which
+	# This prevents naming collisions such as those from the check()
+	# function macro with LuaType::check
+	add_definitions(-D__ASSERT_MACROS_DEFINE_VERSIONS_WITHOUT_UNDERSCORES=0)
+endif(APPLE)
+
 #===================================
 # Build options ====================
 #===================================
@@ -73,6 +133,12 @@ endif(NOT IOS)
 
 option(BUILD_PYTHON_BINDINGS "Build python bindings" OFF)
 option(BUILD_LUA_BINDINGS "Build Lua bindings" OFF)
+option(BUILD_ROCKET_8BPP_FONTS "Upload fonts as 8bit images" OFF)
+
+if(APPLE)
+	option(BUILD_FRAMEWORK "Build Framework bundle for OSX" OFF)
+endif()
+
 option(BUILD_SAMPLES "Build samples" OFF)
 if(WIN32)
 	option(SKIP_DIRECTX_SAMPLES "Skip build of all DirectX related samples.  Only applies if BUILD_SAMPLES is ON" OFF)
@@ -80,20 +146,33 @@ if(WIN32)
 	option(SKIP_DIRECTX10_SAMPLE "Skip build of DirectX 10 related sample.  Only applies if BUILD_SAMPLES is ON and SKIP_DIRECTX_SAMPLES is OFF" OFF)
 endif()
 
-if(IOS)
-	if(BUILD_SHARED_LIBS)
-		message(FATAL_ERROR "BUILD_SHARED_LIBS must be OFF for iOS builds.  iOS does not support shared libraries.")
-	endif(BUILD_SHARED_LIBS)
-endif(IOS)
+if(APPLE)
+	if(IOS)
+		if(BUILD_SHARED_LIBS)
+			message(FATAL_ERROR "BUILD_SHARED_LIBS must be OFF for iOS builds.  iOS does not support shared libraries.")
+		endif(BUILD_SHARED_LIBS)
+	endif(IOS)
 
-if(IOS)
-	if(BUILD_SHARED_LIBS)
-		message(FATAL_ERROR "BUILD_SHARED_LIBS must be OFF for iOS builds.  iOS does not support shared libraries.")
-	endif(BUILD_SHARED_LIBS)
-endif(IOS)
+	if(BUILD_FRAMEWORK)
+		if(NOT "${CMAKE_GENERATOR}" STREQUAL "Xcode")
+			message(FATAL_ERROR "You should use Xcode generator with BUILD_FRAMEWORK enabled")
+		endif()
+		if(NOT BUILD_SHARED_LIBS)
+			message(FATAL_ERROR "BUILD_SHARED_LIBS must be ON with BUILD_FRAMEWORK enabled")
+		endif()
+	endif()
+else(APPLE)
+	if(BUILD_FRAMEWORK)
+		message(FATAL_ERROR "BUILD_FRAMEWORK is only supported on Mac OS X with the Xcode generator")
+	endif()
+endif(APPLE)
 
 if(NOT BUILD_SHARED_LIBS)
-    add_definitions(-DSTATIC_LIB)
+	add_definitions(-DROCKET_STATIC_LIB)
+endif()
+
+if(BUILD_ROCKET_8BPP_FONTS)
+	add_definitions(-DROCKET_8BPP_FONTS)
 endif()
 
 #on windows, check for VC10 and fix the multiple compile target issue.
@@ -103,7 +182,7 @@ IF(WIN32)
       message("Visual Studio 2010 (${MSVC_VERSION}) build fix at play (/FORCE:MULTIPLE)")
       set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /FORCE:MULTIPLE")
     endif()
-  endif() 
+  endif()
 ENDIF(WIN32)
 
 
@@ -112,7 +191,14 @@ ENDIF(WIN32)
 #===================================
 
 # FreeType
-find_package(Freetype REQUIRED)	
+if(CMAKE_MAJOR_VERSION LESS 3)
+	# Freetype changed the layout of its header files, we  need to use
+	# the FindFreetype module from cmake v3 at least, included here
+	find_package(Freetype-v2fix REQUIRED)
+else()
+	find_package(Freetype REQUIRED)
+endif()
+
 if(FREETYPE_FOUND)
 		include_directories(${FREETYPE_INCLUDE_DIRS})
 		link_directories(${FREETYPE_LINK_DIRS})
@@ -138,14 +224,18 @@ if(BUILD_PYTHON_BINDINGS)
     find_package(Boost 1.40.0 COMPONENTS python REQUIRED)
     if(Boost_FOUND)
         include_directories(${Boost_INCLUDE_DIR})
-        list(APPEND PY_BINDINGS_LINK_LIBS ${Boost_LIBRARIES})
+        list(APPEND PY_BINDINGS_LINK_LIBS ${PYTHON_LIBRARY} ${Boost_LIBRARIES})
     endif()
 
 endif()
 
 #Lua
 if(BUILD_LUA_BINDINGS)
-    find_package(Lua)
+    if(CMAKE_MAJOR_VERSION LESS 3)
+        find_package(Lua-v2fix)
+    else()
+        find_package(Lua)
+    endif()
     if(LUA_FOUND)
         include_directories(${LUA_INCLUDE_DIR})
         list(APPEND LUA_BINDINGS_LINK_LIBS ${LUA_LIBRARIES})
@@ -166,6 +256,7 @@ include_directories(
 # Include list of source files
 include(FileList)
 
+if(NOT BUILD_FRAMEWORK)
 #===================================
 # Build libraries ==================
 #===================================
@@ -175,26 +266,18 @@ set(LIBRARIES Core Controls Debugger)
 foreach(library ${LIBRARIES})
     set(NAME Rocket${library})
 
-    add_library(${NAME} ${${library}_SRC_FILES}
+    add_library(${NAME}
                         ${${library}_HDR_FILES}
                         ${${library}_PUB_HDR_FILES}
                         ${MASTER_${library}_PUB_HDR_FILES}
+			${${library}_SRC_FILES}
     )
 
     set_target_properties(${NAME} PROPERTIES
                            VERSION ${PROJECT_VERSION}
                            SOVERSION ${LIBROCKET_VERSION_MAJOR}
                            CXX_STANDARD 11
-                           CXX_STANDARD_REQUIRED ON
     )
-    
-    if(APPLE)
-	if(NOT IOS)
-    		set_target_properties(${NAME} PROPERTIES
-    						OSX_ARCHITECTURES "i386;x86_64;"
-    		)
-	endif(NOT IOS)
-    endif(APPLE)
 
     install(TARGETS ${NAME}
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -202,6 +285,69 @@ foreach(library ${LIBRARIES})
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
 endforeach(library)
+else(NOT BUILD_FRAMEWORK)
+	#===================================
+	# Build combined Framework =========
+	#===================================
+
+	set(NAME Rocket)
+
+	set(MASTER_PUB_HDR_FILES
+		${MASTER_Core_PUB_HDR_FILES}
+		${MASTER_Controls_PUB_HDR_FILES}
+		${MASTER_Debugger_PUB_HDR_FILES}
+	)
+
+	add_library(${NAME}
+		${Core_HDR_FILES}
+		${MASTER_Core_PUB_HDR_FILES}
+		${Core_PUB_HDR_FILES}
+		${Core_SRC_FILES}
+		${Controls_HDR_FILES}
+		${MASTER_Controls_PUB_HDR_FILES}
+		${Controls_PUB_HDR_FILES}
+		${Controls_SRC_FILES}
+		${Debugger_HDR_FILES}
+		${MASTER_Debugger_PUB_HDR_FILES}
+		${Debugger_PUB_HDR_FILES}
+		${Debugger_SRC_FILES}
+	)
+
+	set_target_properties(${NAME} PROPERTIES
+		VERSION ${PROJECT_VERSION}
+		SOVERSION ${LIBROCKET_VERSION_MAJOR}
+	)
+
+		set_property(SOURCE ${MASTER_PUB_HDR_FILES}
+			PROPERTY MACOSX_PACKAGE_LOCATION Headers
+		)
+		set_property(SOURCE ${Core_PUB_HDR_FILES}
+			PROPERTY MACOSX_PACKAGE_LOCATION Headers/Core
+		)
+		set_property(SOURCE ${Controls_PUB_HDR_FILES}
+			PROPERTY MACOSX_PACKAGE_LOCATION Headers/Controls
+		)
+		set_property(SOURCE ${Debugger_PUB_HDR_FILES}
+			PROPERTY MACOSX_PACKAGE_LOCATION Headers/Debugger
+		)
+		set_target_properties(${NAME} PROPERTIES
+			FRAMEWORK TRUE
+			FRAMEWORK_VERSION ${PROJECT_VERSION}
+			MACOSX_FRAMEWORK_IDENTIFIER com.librocketb.${NAME}
+			MACOSX_FRAMEWORK_SHORT_VERSION_STRING ${LIBROCKET_VERSION_MAJOR}.${LIBROCKET_VERSION_MINOR}.${LIBROCKET_VERSION_PATCH}.${LIBROCKET_VERSION_TWEAK}
+			MACOSX_FRAMEWORK_BUNDLE_VERSION ${PROJECT_VERSION}
+			XCODE_ATTRIBUTE_INSTALL_PATH "@rpath"
+			PUBLIC_HEADER ${MASTER_PUB_HDR_FILES}
+			XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD "c++0x"
+		)
+
+    install(TARGETS ${NAME}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+            FRAMEWORK DESTINATION Library/Frameworks
+    )
+endif(NOT BUILD_FRAMEWORK)
 
 # Build python bindings
 if(BUILD_PYTHON_BINDINGS)
@@ -239,14 +385,6 @@ if(BUILD_LUA_BINDINGS)
                            VERSION ${PROJECT_VERSION}
                            SOVERSION ${LIBROCKET_VERSION_MAJOR}
         )
-        
-    if(APPLE)
-	if(NOT IOS)
-    		set_target_properties(${NAME} PROPERTIES
-    						OSX_ARCHITECTURES "$(ARCHS_STANDARD_32_64_BIT)"
-    		)
-	endif(NOT IOS)
-    endif(APPLE)
 
         install(TARGETS ${NAME}
             LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -261,18 +399,32 @@ endif()
 # Link libraries ===================
 #===================================
 
+if(NOT BUILD_FRAMEWORK)
 target_link_libraries(RocketCore ${CORE_LINK_LIBS})
 target_link_libraries(RocketControls RocketCore)
 target_link_libraries(RocketDebugger RocketCore)
+else(NOT BUILD_FRAMEWORK)
+target_link_libraries(Rocket ${CORE_LINK_LIBS})
+endif(NOT BUILD_FRAMEWORK)
 
 if(BUILD_PYTHON_BINDINGS)
-    target_link_libraries(_rocketcore RocketCore ${PY_BINDINGS_LINK_LIBS})
-    target_link_libraries(_rocketcontrols RocketControls ${PY_BINDINGS_LINK_LIBS})
+	if(NOT BUILD_FRAMEWORK)
+		target_link_libraries(_rocketcore RocketCore ${PY_BINDINGS_LINK_LIBS})
+		target_link_libraries(_rocketcontrols RocketControls ${PY_BINDINGS_LINK_LIBS})
+	else(NOT BUILD_FRAMEWORK)
+		target_link_libraries(_rocketcore Rocket ${PY_BINDINGS_LINK_LIBS})
+		target_link_libraries(_rocketcontrols Rocket ${PY_BINDINGS_LINK_LIBS})
+	endif(NOT BUILD_FRAMEWORK)
 endif()
 
 if(BUILD_LUA_BINDINGS)
-    target_link_libraries(RocketCoreLua RocketCore ${LUA_BINDINGS_LINK_LIBS})
-    target_link_libraries(RocketControlsLua RocketControls RocketCoreLua ${LUA_BINDINGS_LINK_LIBS})
+	if(NOT BUILD_FRAMEWORK)
+		target_link_libraries(RocketCoreLua RocketCore ${LUA_BINDINGS_LINK_LIBS})
+		target_link_libraries(RocketControlsLua RocketControls RocketCoreLua ${LUA_BINDINGS_LINK_LIBS})
+	else(NOT BUILD_FRAMEWORK)
+		target_link_libraries(RocketCoreLua Rocket ${LUA_BINDINGS_LINK_LIBS})
+		target_link_libraries(RocketControlsLua Rocket RocketCoreLua ${LUA_BINDINGS_LINK_LIBS})
+	endif(NOT BUILD_FRAMEWORK)
 endif()
 
 
@@ -286,10 +438,18 @@ macro(bl_sample NAME)
     	add_executable(${NAME} WIN32 ${${NAME}_SRC_FILES} ${${NAME}_HDR_FILES} )
 	elseif(APPLE)
 		add_executable(${NAME} MACOSX_BUNDLE ${${NAME}_SRC_FILES} ${${NAME}_HDR_FILES} )
+
+		# The first rpath is to the proper location where the framework/library SHOULD be, the second is to the location actually seen
+		# in the build environment
+if(BUILD_FRAMEWORK)
+		set_target_properties(${NAME} PROPERTIES LINK_FLAGS "-rpath @executable_path/../Frameworks")
+else()
+		set_target_properties(${NAME} PROPERTIES LINK_FLAGS "-rpath @executable_path/../lib")
+endif()
     else()
     	add_executable(${NAME} ${${NAME}_SRC_FILES} ${${NAME}_HDR_FILES} )
     endif()
-    
+
     if (APPLE)
     	# We only support i386 for the samples as it still uses Carbon
     	set_target_properties(${NAME} PROPERTIES OSX_ARCHITECTURES "i386;" )
@@ -303,26 +463,35 @@ if(BUILD_SAMPLES)
 
     set(samples treeview customlog drag loaddocument)
     set(tutorials template datagrid datagrid_tree tutorial_drag)
-    
+
+if(NOT BUILD_FRAMEWORK)
     set(sample_LIBRARIES
-    	shell 
-    	RocketCore 
+    	shell
+    	RocketCore
     	RocketControls
     	RocketDebugger
     )
+else(NOT BUILD_FRAMEWORK)
+    set(sample_LIBRARIES
+    	shell
+    	Rocket
+    )
+endif(NOT BUILD_FRAMEWORK)
 
-	# Find OpenGL 
+	# Find OpenGL
 	find_package(OpenGL REQUIRED)
-    	   
+
     if(OPENGL_FOUND)
 	include_directories(${OPENGL_INCLUDE_DIR})
 	list(APPEND sample_LIBRARIES ${OPENGL_LIBRARIES})
     endif()
-    
+
     # Set up required system libraries
     if(WIN32)
 		if(SKIP_DIRECTX_SAMPLES)
 			message("-- Skipping all DirectX samples")
+			set(SKIP_DIRECTX9_SAMPLE ON)
+			set(SKIP_DIRECTX10_SAMPLE ON)
 		else()
 			message("-- Determing if DirectX samples can be built")
 			include(FindDirectX)
@@ -375,14 +544,14 @@ if(BUILD_SAMPLES)
 				endif()
 			else()
 				message("-- Determing if DirectX samples can be built - No")
-				set(SKIP_DIRECTX_SAMPLES ON)
 				set(SKIP_DIRECTX9_SAMPLE ON)
+				set(SKIP_DIRECTX10_SAMPLE ON)
 			endif()
 		endif()
     elseif(APPLE)
 		include(FindCarbon)
     	find_package(Carbon REQUIRED)
-    	
+
     	if (Carbon_FOUND)
     		include_directories(${Carbon_INCLUDE_DIR})
         	list(APPEND sample_LIBRARIES ${Carbon_LIBRARIES})
@@ -399,7 +568,7 @@ if(BUILD_SAMPLES)
 		endif()
         endif()
     endif()
-   
+
     set(SAMPLES_DIR opt/Rocket/Samples CACHE PATH "path to samples dir")
 
     # The samples and tutorials use the shell library
@@ -418,7 +587,7 @@ if(BUILD_SAMPLES)
 
         # The samples always set this as their current working directory
         install(DIRECTORY DESTINATION ${SAMPLES_DIR}/basic/${sample})
-        install(TARGETS ${sample} 
+        install(TARGETS ${sample}
         	RUNTIME DESTINATION ${SAMPLES_DIR}/${sample}
         	BUNDLE DESTINATION ${SAMPLES_DIR})
     endforeach()
@@ -431,7 +600,7 @@ if(BUILD_SAMPLES)
 
 			# The samples always set this as their current working directory
 			install(DIRECTORY DESTINATION ${SAMPLES_DIR}/basic/directx)
-			install(TARGETS directx 
+			install(TARGETS directx
 				RUNTIME DESTINATION ${SAMPLES_DIR}/directx
 				BUNDLE DESTINATION ${SAMPLES_DIR})
 		endif()
@@ -443,10 +612,80 @@ if(BUILD_SAMPLES)
 
 			# The samples always set this as their current working directory
 			install(DIRECTORY DESTINATION ${SAMPLES_DIR}/basic/directx10)
-			install(TARGETS directx10 
+			install(TARGETS directx10
 				RUNTIME DESTINATION ${SAMPLES_DIR}/directx10
 				BUNDLE DESTINATION ${SAMPLES_DIR})
 		endif()
+	endif()
+
+    message("-- Can SDL2 sample be built")
+    find_package(SDL)
+    if(SDL_FOUND)
+	find_package(SDL_image)
+	if(SDL_IMAGE_FOUND)
+		find_package(GLEW)
+		if(GLEW_FOUND)
+        		message("-- Can SDL2 sample be built - yes")
+			include_directories(${SDL_INCLUDE_DIR} ${GLEW_INCLUDE_DIR})
+
+			bl_sample(sdl2 ${sample_LIBRARIES}  ${SDL_LIBRARY} ${SDL_IMAGE_LIBRARY} ${GLEW_LIBRARY})
+			# The samples always set this as their current working directory
+			install(DIRECTORY DESTINATION ${SAMPLES_DIR}/basic/sdl2)
+			install(TARGETS sdl2
+				RUNTIME DESTINATION ${SAMPLES_DIR}/sdl2
+				BUNDLE DESTINATION ${SAMPLES_DIR})
+		else()
+		        message("-- Can SDL2 sample be built - GLEW not found")
+		endif()
+	else()
+	        message("-- Can SDL2 sample be built - SDL2_image not found")
+	endif()
+    else()
+        message("-- Can SDL2 sample be built - SDL2 not found")
+    endif()
+
+
+	message("-- Can SFML 1.x sample be built")
+	find_package(SFML 1 COMPONENTS graphics window system)
+	if(NOT SFML_FOUND)
+		message("-- Can SFML 1.x sample be built - no")
+	elseif(SFML_VERSION_MAJOR GREATER 1)
+		message("-- Can SFML 1.x sample be built - no: Version 2 detected")
+	else()
+		message("-- Can SFML 1.x sample be built - yes")
+
+		include_directories(${SFML_INCLUDE_DIR})
+
+		bl_sample(sfml ${sample_LIBRARIES} ${SFML_LIBRARIES})
+			# The samples always set this as their current working directory
+			install(DIRECTORY DESTINATION ${SAMPLES_DIR}/basic/sfml)
+			install(TARGETS sfml
+				RUNTIME DESTINATION ${SAMPLES_DIR}/sfml
+				BUNDLE DESTINATION ${SAMPLES_DIR})
+	endif()
+
+	message("-- Can SFML 2.x sample be built")
+	find_package(SFML 2 COMPONENTS graphics window system)
+	if(NOT SFML_FOUND)
+		message("-- Can SFML 2.x sample be built - no")
+	else()
+		find_package(GLEW)
+                if(GLEW_FOUND)
+			message("-- Can SFML 2.x sample be built - yes: with GLEW")
+			include_directories(${SFML_INCLUDE_DIR} ${GLEW_INCLUDE_DIR})
+			add_definitions( -DENABLE_GLEW )
+			bl_sample(sfml2 ${sample_LIBRARIES} ${SFML_LIBRARIES} ${GLEW_LIBRARY})
+		else()
+			message("-- Can SFML 2.x sample be built - yes: without GLEW")
+			include_directories(${SFML_INCLUDE_DIR})
+			bl_sample(sfml2 ${sample_LIBRARIES} ${SFML_LIBRARIES})
+		endif()
+
+			# The samples always set this as their current working directory
+			install(DIRECTORY DESTINATION ${SAMPLES_DIR}/basic/sfml2)
+			install(TARGETS sfml2
+				RUNTIME DESTINATION ${SAMPLES_DIR}/sfml2
+				BUNDLE DESTINATION ${SAMPLES_DIR})
 	endif()
 
     # Build and install the tutorials
@@ -463,7 +702,7 @@ if(BUILD_SAMPLES)
     # Build and install invaders sample
     bl_sample(invaders ${sample_LIBRARIES})
     install(DIRECTORY DESTINATION ${SAMPLES_DIR}/invaders)
-    install(TARGETS invaders 
+    install(TARGETS invaders
     	RUNTIME DESTINATION ${SAMPLES_DIR}/invaders
     	BUNDLE DESTINATION ${SAMPLES_DIR})
 
@@ -475,11 +714,11 @@ if(BUILD_SAMPLES)
 	    	RUNTIME DESTINATION ${SAMPLES_DIR}/pyinvaders
 	    	BUNDLE DESTINATION ${SAMPLES_DIR})
 	endif()
-    
+
     if(BUILD_LUA_BINDINGS)
         bl_sample(luainvaders RocketCoreLua RocketControlsLua ${sample_LIBRARIES} ${LUA_BINDINGS_LINK_LIBS})
         install(DIRECTORY DESTINATION ${SAMPLES_DIR}/luainvaders)
-        install(TARGETS luainvaders 
+        install(TARGETS luainvaders
         	RUNTIME DESTINATION ${SAMPLES_DIR}/luainvaders
         	BUNDLE DESTINATION ${SAMPLES_DIR})
     endif()
@@ -557,10 +796,10 @@ if(BUILD_SAMPLES)
     endif()
 
     if(BUILD_LUA_BINDINGS)
-        install(DIRECTORY ${PROJECT_SOURCE_DIR}/Samples/luainvaders/data 
+        install(DIRECTORY ${PROJECT_SOURCE_DIR}/Samples/luainvaders/data
                 DESTINATION ${SAMPLES_DIR}/luainvaders
         )
-        install(DIRECTORY ${PROJECT_SOURCE_DIR}/Samples/luainvaders/lua 
+        install(DIRECTORY ${PROJECT_SOURCE_DIR}/Samples/luainvaders/lua
                 DESTINATION ${SAMPLES_DIR}/luainvaders
         )
     endif()

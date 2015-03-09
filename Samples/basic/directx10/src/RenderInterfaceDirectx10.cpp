@@ -44,32 +44,24 @@ const D3D10_INPUT_ELEMENT_DESC layout[] =
 };
 
 //The constructor of the render
-RenderInterfaceDirectX10::RenderInterfaceDirectX10(ID3D10Device * pD3D10Device,float screenWidth,float screenHeight)
+RenderInterfaceDirectX10::RenderInterfaceDirectX10(void)
 {
+	m_rocket_context = NULL;
+	m_pD3D10Device = NULL;
+
+	m_pEffect = NULL;
+	m_pTechnique = NULL;
+	m_pVertexLayout = NULL;
+
+	m_pSwapChain = NULL;
+	m_pRenderTargetView = NULL;
+
+	m_pProjectionMatrixVariable = NULL;
+	m_pWorldMatrixVariable = NULL;
+	m_pDiffuseTextureVariable = NULL;
+
 	m_pScissorTestDisable = NULL;
 	m_pScissorTestEnable = NULL;
-	m_pD3D10Device=pD3D10Device;
-	setupEffect();
-	//Create our view and projection matrix
-	D3DXMatrixOrthoOffCenterLH(&m_matProjection, 0, screenWidth, screenHeight, 0, -1, 1);
-	m_pProjectionMatrixVariable->SetMatrix((float*)m_matProjection);
-
-	//Create scissor raster states
-	D3D10_RASTERIZER_DESC rasterDesc;
-	rasterDesc.FillMode=D3D10_FILL_SOLID;
-	rasterDesc.CullMode=D3D10_CULL_NONE;
-	rasterDesc.ScissorEnable=TRUE;
-	rasterDesc.FrontCounterClockwise=TRUE;
-	if (FAILED(m_pD3D10Device->CreateRasterizerState(&rasterDesc, &m_pScissorTestEnable)))
-	{
-		Rocket::Core::Log::Message(Rocket::Core::Log::LT_ERROR, "Can't create Raster State - ScissorEnable");
-	}
-
-	rasterDesc.ScissorEnable=FALSE;
-	if (FAILED(m_pD3D10Device->CreateRasterizerState(&rasterDesc, &m_pScissorTestDisable)))
-	{
-		Rocket::Core::Log::Message(Rocket::Core::Log::LT_ERROR, "Can't create Raster State - ScissorDisable");
-	}
 }
 
 //Loads the effect from memory and retrieves initial variables from the effect
@@ -137,18 +129,17 @@ RenderInterfaceDirectX10::~RenderInterfaceDirectX10()
 }
 
 // Called by Rocket when it wants to render geometry that it does not wish to optimise.
-void RenderInterfaceDirectX10::RenderGeometry(Rocket::Core::Vertex* ROCKET_UNUSED_PARAMETER(vertices), int ROCKET_UNUSED_PARAMETER(num_vertices), int* ROCKET_UNUSED_PARAMETER(indices), int ROCKET_UNUSED_PARAMETER(num_indices), const Rocket::Core::TextureHandle ROCKET_UNUSED_PARAMETER(texture), const Rocket::Core::Vector2f& ROCKET_UNUSED_PARAMETER(translation))
+void RenderInterfaceDirectX10::RenderGeometry(Rocket::Core::Vertex* vertices, int num_vertices, int* indices, int num_indices, const Rocket::Core::TextureHandle texture, const Rocket::Core::Vector2f& translation)
 {
-	ROCKET_UNUSED(vertices);
-	ROCKET_UNUSED(num_vertices);
-	ROCKET_UNUSED(indices);
-	ROCKET_UNUSED(num_indices);
-	ROCKET_UNUSED(texture);
-	ROCKET_UNUSED(translation);
-
-	// We've chosen to not support non-compiled geometry in the DirectX renderer. If you wanted to render non-compiled
+	// @TODO We've chosen to not support non-compiled geometry in the DirectX renderer. If you wanted to render non-compiled
 	// geometry, for example for very small sections of geometry, you could use DrawIndexedPrimitiveUP or write to a
 	// dynamic vertex buffer which is flushed when either the texture changes or compiled geometry is drawn.
+
+        /// @TODO, HACK, just use the compiled geometry framework for now, this is inefficient but better than absolutely nothing
+        /// for the time being
+	Rocket::Core::CompiledGeometryHandle geom = this->CompileGeometry(vertices, num_vertices, indices, num_indices, texture);
+	this->RenderCompiledGeometry(geom, translation);
+	this->ReleaseCompiledGeometry(geom);
 }
 
 // Called by Rocket when it wants to compile geometry it believes will be static for the forseeable future.

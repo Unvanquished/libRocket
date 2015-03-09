@@ -2,9 +2,10 @@
 
 set(shell_HDR_FILES
     ${PROJECT_SOURCE_DIR}/Samples/shell/include/Input.h
-    ${PROJECT_SOURCE_DIR}/Samples/shell/include/Shell.h
     ${PROJECT_SOURCE_DIR}/Samples/shell/include/ShellFileInterface.h
+    ${PROJECT_SOURCE_DIR}/Samples/shell/include/Shell.h
     ${PROJECT_SOURCE_DIR}/Samples/shell/include/ShellOpenGL.h
+    ${PROJECT_SOURCE_DIR}/Samples/shell/include/ShellRenderInterfaceExtensions.h
     ${PROJECT_SOURCE_DIR}/Samples/shell/include/ShellRenderInterfaceOpenGL.h
     ${PROJECT_SOURCE_DIR}/Samples/shell/include/ShellSystemInterface.h
 )
@@ -70,6 +71,39 @@ set(treeview_SRC_FILES
     ${PROJECT_SOURCE_DIR}/Samples/basic/treeview/src/main.cpp
 )
 
+set(sdl2_HDR_FILES
+    ${PROJECT_SOURCE_DIR}/Samples/basic/sdl2/src/RenderInterfaceSDL2.h
+    ${PROJECT_SOURCE_DIR}/Samples/basic/sdl2/src/SystemInterfaceSDL2.h
+)
+
+set(sdl2_SRC_FILES
+    ${PROJECT_SOURCE_DIR}/Samples/basic/sdl2/src/main.cpp
+    ${PROJECT_SOURCE_DIR}/Samples/basic/sdl2/src/RenderInterfaceSDL2.cpp
+    ${PROJECT_SOURCE_DIR}/Samples/basic/sdl2/src/SystemInterfaceSDL2.cpp
+)
+
+set(sfml_HDR_FILES
+    ${PROJECT_SOURCE_DIR}/Samples/basic/sfml/src/RenderInterfaceSFML.h
+    ${PROJECT_SOURCE_DIR}/Samples/basic/sfml/src/SystemInterfaceSFML.h
+)
+
+set(sfml_SRC_FILES
+    ${PROJECT_SOURCE_DIR}/Samples/basic/sfml/src/main.cpp
+    ${PROJECT_SOURCE_DIR}/Samples/basic/sfml/src/RenderInterfaceSFML.cpp
+    ${PROJECT_SOURCE_DIR}/Samples/basic/sfml/src/SystemInterfaceSFML.cpp
+)
+
+set(sfml2_HDR_FILES
+    ${PROJECT_SOURCE_DIR}/Samples/basic/sfml2/src/RenderInterfaceSFML.h
+    ${PROJECT_SOURCE_DIR}/Samples/basic/sfml2/src/SystemInterfaceSFML.h
+)
+
+set(sfml2_SRC_FILES
+    ${PROJECT_SOURCE_DIR}/Samples/basic/sfml2/src/main.cpp
+    ${PROJECT_SOURCE_DIR}/Samples/basic/sfml2/src/RenderInterfaceSFML.cpp
+    ${PROJECT_SOURCE_DIR}/Samples/basic/sfml2/src/SystemInterfaceSFML.cpp
+)
+
 set(directx_HDR_FILES
     ${PROJECT_SOURCE_DIR}/Samples/basic/directx/src/RenderInterfaceDirectX.h
 )
@@ -77,6 +111,7 @@ set(directx_HDR_FILES
 set(directx_SRC_FILES
     ${PROJECT_SOURCE_DIR}/Samples/basic/directx/src/main.cpp
     ${PROJECT_SOURCE_DIR}/Samples/basic/directx/src/RenderInterfaceDirectX.cpp
+    ${PROJECT_SOURCE_DIR}/Samples/basic/directx/src/ShellRenderInterfaceExtensionsDirectX_Win32.cpp
 )
 
 set(directx10_HDR_FILES
@@ -87,6 +122,7 @@ set(directx10_HDR_FILES
 set(directx10_SRC_FILES
     ${PROJECT_SOURCE_DIR}/Samples/basic/directx10/src/main.cpp
     ${PROJECT_SOURCE_DIR}/Samples/basic/directx10/src/RenderInterfaceDirectx10.cpp
+    ${PROJECT_SOURCE_DIR}/Samples/basic/directx10/src/ShellRenderInterfaceExtensionsDirectX10_Win32.cpp
 )
 
 set(template_HDR_FILES
@@ -147,8 +183,8 @@ set(invaders_HDR_FILES
     ${PROJECT_SOURCE_DIR}/Samples/invaders/src/EventHandlerStartGame.h
     ${PROJECT_SOURCE_DIR}/Samples/invaders/src/EventInstancer.h
     ${PROJECT_SOURCE_DIR}/Samples/invaders/src/EventManager.h
-    ${PROJECT_SOURCE_DIR}/Samples/invaders/src/Game.h
     ${PROJECT_SOURCE_DIR}/Samples/invaders/src/GameDetails.h
+    ${PROJECT_SOURCE_DIR}/Samples/invaders/src/Game.h
     ${PROJECT_SOURCE_DIR}/Samples/invaders/src/HighScores.h
     ${PROJECT_SOURCE_DIR}/Samples/invaders/src/HighScoresNameFormatter.h
     ${PROJECT_SOURCE_DIR}/Samples/invaders/src/HighScoresShipFormatter.h
@@ -192,8 +228,8 @@ set(luainvaders_HDR_FILES
     ${PROJECT_SOURCE_DIR}/Samples/luainvaders/src/Defender.h
     ${PROJECT_SOURCE_DIR}/Samples/luainvaders/src/ElementGame.h
     ${PROJECT_SOURCE_DIR}/Samples/luainvaders/src/ElementGameInstancer.h
-    ${PROJECT_SOURCE_DIR}/Samples/luainvaders/src/Game.h
     ${PROJECT_SOURCE_DIR}/Samples/luainvaders/src/GameDetails.h
+    ${PROJECT_SOURCE_DIR}/Samples/luainvaders/src/Game.h
     ${PROJECT_SOURCE_DIR}/Samples/luainvaders/src/HighScores.h
     ${PROJECT_SOURCE_DIR}/Samples/luainvaders/src/Invader.h
     ${PROJECT_SOURCE_DIR}/Samples/luainvaders/src/LuaInterface.h
@@ -228,8 +264,8 @@ set(pyinvaders_HDR_FILES
     ${PROJECT_SOURCE_DIR}/Samples/pyinvaders/src/DecoratorStarfield.h
     ${PROJECT_SOURCE_DIR}/Samples/pyinvaders/src/Defender.h
     ${PROJECT_SOURCE_DIR}/Samples/pyinvaders/src/ElementGame.h
-    ${PROJECT_SOURCE_DIR}/Samples/pyinvaders/src/Game.h
     ${PROJECT_SOURCE_DIR}/Samples/pyinvaders/src/GameDetails.h
+    ${PROJECT_SOURCE_DIR}/Samples/pyinvaders/src/Game.h
     ${PROJECT_SOURCE_DIR}/Samples/pyinvaders/src/HighScores.h
     ${PROJECT_SOURCE_DIR}/Samples/pyinvaders/src/Invader.h
     ${PROJECT_SOURCE_DIR}/Samples/pyinvaders/src/Mothership.h
@@ -261,6 +297,7 @@ if(WIN32)
        list(APPEND shell_SRC_FILES
                ${PROJECT_SOURCE_DIR}/Samples/shell/src/win32/ShellWin32.cpp
                ${PROJECT_SOURCE_DIR}/Samples/shell/src/win32/InputWin32.cpp
+               ${PROJECT_SOURCE_DIR}/Samples/shell/src/win32/ShellRenderInterfaceExtensionsOpenGL_Win32.cpp
        )
        list(APPEND shell_HDR_FILES
                ${PROJECT_SOURCE_DIR}/Samples/shell/include/win32/InputWin32.h
@@ -269,6 +306,7 @@ elseif(APPLE)
        list(APPEND shell_SRC_FILES
                ${PROJECT_SOURCE_DIR}/Samples/shell/src/macosx/ShellMacOSX.cpp
                ${PROJECT_SOURCE_DIR}/Samples/shell/src/macosx/InputMacOSX.cpp
+               ${PROJECT_SOURCE_DIR}/Samples/shell/src/macosx/ShellRenderInterfaceExtensionsOpenGL_MacOSX.cpp
        )
        list(APPEND shell_HDR_FILES
                ${PROJECT_SOURCE_DIR}/Samples/shell/include/macosx/InputMacOSX.h
@@ -277,6 +315,7 @@ else()
        list(APPEND shell_SRC_FILES
                ${PROJECT_SOURCE_DIR}/Samples/shell/src/x11/ShellX11.cpp
                ${PROJECT_SOURCE_DIR}/Samples/shell/src/x11/InputX11.cpp
+               ${PROJECT_SOURCE_DIR}/Samples/shell/src/x11/ShellRenderInterfaceExtensionsOpenGL_X11.cpp
        )
        list(APPEND shell_HDR_FILES
                ${PROJECT_SOURCE_DIR}/Samples/shell/include/x11/InputX11.h
